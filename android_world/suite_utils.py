@@ -453,6 +453,9 @@ def run(
   def run_episode(task: task_eval.TaskEval) -> episode_runner.EpisodeResult:
     if demo_mode:
       _display_goal(agent.env, task)
+    set_task_name = getattr(agent, 'set_task_name', None)
+    if callable(set_task_name):
+      set_task_name(task.name)
     return episode_runner.run_episode(
         goal=task.goal,
         agent=agent,

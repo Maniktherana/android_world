@@ -30,9 +30,11 @@ from android_world import checkpointer as checkpointer_lib
 from android_world import registry
 from android_world import suite_utils
 from android_world.agents import base_agent
+from android_world.agents import codex_agent
 from android_world.agents import human_agent
 from android_world.agents import infer
 from android_world.agents import m3a
+from android_world.agents import pi_agent
 from android_world.agents import random_agent
 from android_world.agents import seeact
 from android_world.agents import t3a
@@ -96,6 +98,13 @@ _SUITE_FAMILY = flags.DEFINE_enum(
     ],
     'Suite family to run. See registry.py for more information.',
 )
+_GRPC_PORT = flags.DEFINE_integer(
+    'grpc_port',
+    None,
+    'Emulator gRPC port. By default, discover it from --console_port.',
+    lower_bound=1,
+    upper_bound=65535,
+)
 _TASK_RANDOM_SEED = flags.DEFINE_integer(
     'task_random_seed', 30, 'Random seed for task randomness.'
 )
@@ -130,6 +139,84 @@ _OUTPUT_PATH = flags.DEFINE_string(
 # Agent specific.
 _AGENT_NAME = flags.DEFINE_string('agent_name', 'm3a_gpt4v', help='Agent name.')
 
+# Pi coding agent, driving the device through the agentsims CLI.
+_PI_PROVIDER_NAME = flags.DEFINE_string(
+    'pi_agent_provider',
+    pi_agent.DEFAULT_PROVIDER,
+    'Pi provider name from ~/.pi/agent/models.json.',
+)
+_PI_MODEL = flags.DEFINE_string(
+    'pi_agent_model', pi_agent.DEFAULT_MODEL, 'Pi model ID for that provider.'
+)
+_PI_SKILL_PATH = flags.DEFINE_string(
+    'pi_skill_path',
+    pi_agent.DEFAULT_SKILL_PATH,
+    'Path to the agentsims build-mobile-apps skill.',
+)
+_PI_DEVICE_ID = flags.DEFINE_string(
+    'pi_device_id',
+    None,
+    'Agentsims device ID. Defaults to android:emulator-<console_port>.',
+)
+_AGENTSIMS_BINARY = flags.DEFINE_string(
+    'agentsims_binary', 'agentsims', 'Agentsims executable name or path.'
+)
+_PI_THINKING = flags.DEFINE_string(
+    'pi_thinking', pi_agent.DEFAULT_THINKING, 'Pi thinking level.'
+)
+_PI_TIMEOUT_SEC = flags.DEFINE_float(
+    'pi_timeout_sec', 900.0, 'Wall-clock budget for one Pi task.'
+)
+_PI_TMUX_SESSION = flags.DEFINE_string(
+    'pi_tmux_session', 'androidworld-pi', 'tmux session name for the Pi TUI.'
+)
+
+# Codex CLI agent, driving the device through the agentsims CLI.
+_CODEX_MODEL = flags.DEFINE_string(
+    'codex_model', codex_agent.DEFAULT_MODEL, 'Codex model deployment name.'
+)
+_CODEX_REASONING = flags.DEFINE_string(
+    'codex_reasoning',
+    codex_agent.DEFAULT_REASONING,
+    'Codex reasoning effort.',
+)
+_CODEX_AZURE_BASE_URL = flags.DEFINE_string(
+    'codex_azure_base_url',
+    codex_agent.DEFAULT_AZURE_BASE_URL,
+    'Azure OpenAI endpoint. The /openai suffix is optional.',
+)
+_CODEX_AZURE_API_VERSION = flags.DEFINE_string(
+    'codex_azure_api_version',
+    codex_agent.DEFAULT_AZURE_API_VERSION,
+    'Azure OpenAI API version for Codex.',
+)
+_CODEX_AZURE_API_KEY_ENV = flags.DEFINE_string(
+    'codex_azure_api_key_env',
+    codex_agent.DEFAULT_AZURE_API_KEY_ENV,
+    'Environment variable that contains the Azure OpenAI key.',
+)
+_CODEX_SKILL_PATH = flags.DEFINE_string(
+    'codex_skill_path',
+    codex_agent.DEFAULT_SKILL_PATH,
+    'Path to the agentsims build-mobile-apps SKILL.md file.',
+)
+_CODEX_DEVICE_ID = flags.DEFINE_string(
+    'codex_device_id',
+    None,
+    'Agentsims device ID. Defaults to android:emulator-<console_port>.',
+)
+_CODEX_TIMEOUT_SEC = flags.DEFINE_float(
+    'codex_timeout_sec', 900.0, 'Wall-clock budget for one Codex task.'
+)
+_CODEX_TMUX_SESSION = flags.DEFINE_string(
+    'codex_tmux_session',
+    codex_agent.DEFAULT_TMUX_SESSION,
+    'tmux session name for the Codex live console.',
+)
+_CODEX_BINARY = flags.DEFINE_string(
+    'codex_binary', 'codex', 'Codex executable name or path.'
+)
+
 _FIXED_TASK_SEED = flags.DEFINE_boolean(
     'fixed_task_seed',
     False,
@@ -152,6 +239,7 @@ _MINIWOB_ADDITIONAL_GUIDELINES = [
 
 def _get_agent(
     env: interface.AsyncEnv,
+    run_dir: str,
     family: str | None = None,
 ) -> base_agent.EnvironmentInteractingAgent:
   """Gets agent."""
@@ -175,6 +263,39 @@ def _get_agent(
     agent = t3a.T3A(env, infer.Gpt4Wrapper('gpt-4-turbo-2024-04-09'))
   elif _AGENT_NAME.value == 'm3a_gpt4v':
     agent = m3a.M3A(env, infer.Gpt4Wrapper('gpt-4-turbo-2024-04-09'))
+  # Pi coding agent driving agentsims.
+  elif _AGENT_NAME.value == 'pi':
+    agent = pi_agent.PiAgent(
+        env,
+        _PI_DEVICE_ID.value
+        or f'android:emulator-{_DEVICE_CONSOLE_PORT.value}',
+        provider=_PI_PROVIDER_NAME.value,
+        model=_PI_MODEL.value,
+        skill_path=_PI_SKILL_PATH.value,
+        thinking=_PI_THINKING.value,
+        timeout_sec=_PI_TIMEOUT_SEC.value,
+        agentsims_binary=_AGENTSIMS_BINARY.value,
+        tmux_session=_PI_TMUX_SESSION.value,
+        output_dir=os.path.join(run_dir, 'pi_logs'),
+    )
+  # Codex CLI agent driving agentsims.
+  elif _AGENT_NAME.value == 'codex':
+    agent = codex_agent.CodexAgent(
+        env,
+        _CODEX_DEVICE_ID.value
+        or f'android:emulator-{_DEVICE_CONSOLE_PORT.value}',
+        model=_CODEX_MODEL.value,
+        reasoning=_CODEX_REASONING.value,
+        azure_base_url=_CODEX_AZURE_BASE_URL.value,
+        azure_api_version=_CODEX_AZURE_API_VERSION.value,
+        azure_api_key_env=_CODEX_AZURE_API_KEY_ENV.value,
+        skill_path=_CODEX_SKILL_PATH.value,
+        timeout_sec=_CODEX_TIMEOUT_SEC.value,
+        codex_binary=_CODEX_BINARY.value,
+        agentsims_binary=_AGENTSIMS_BINARY.value,
+        tmux_session=_CODEX_TMUX_SESSION.value,
+        output_dir=os.path.join(run_dir, 'codex_logs'),
+    )
   # SeeAct.
   elif _AGENT_NAME.value == 'seeact':
     agent = seeact.SeeAct(env)
@@ -200,6 +321,7 @@ def _main() -> None:
       console_port=_DEVICE_CONSOLE_PORT.value,
       emulator_setup=_EMULATOR_SETUP.value,
       adb_path=_ADB_PATH.value,
+      grpc_port=_GRPC_PORT.value,
   )
 
   n_task_combinations = _N_TASK_COMBINATIONS.value
@@ -213,18 +335,18 @@ def _main() -> None:
   )
   suite.suite_family = _SUITE_FAMILY.value
 
-  agent = _get_agent(env, _SUITE_FAMILY.value)
+  if _CHECKPOINT_DIR.value:
+    checkpoint_dir = _CHECKPOINT_DIR.value
+  else:
+    checkpoint_dir = checkpointer_lib.create_run_directory(_OUTPUT_PATH.value)
+
+  agent = _get_agent(env, checkpoint_dir, _SUITE_FAMILY.value)
 
   if _SUITE_FAMILY.value.startswith('miniwob'):
     # MiniWoB pages change quickly, don't need to wait for screen to stabilize.
     agent.transition_pause = _MINIWOB_TRANSITION_PAUSE
   else:
     agent.transition_pause = None
-
-  if _CHECKPOINT_DIR.value:
-    checkpoint_dir = _CHECKPOINT_DIR.value
-  else:
-    checkpoint_dir = checkpointer_lib.create_run_directory(_OUTPUT_PATH.value)
 
   print(
       f'Starting eval with agent {_AGENT_NAME.value} and writing to'
