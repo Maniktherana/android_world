@@ -42,11 +42,11 @@ o
    1. Download Android Studio [here](https://developer.android.com/studio?gad_source=1&gclid=Cj0KCQjw3ZayBhDRARIsAPWzx8oLcadBD0vAq8xmUutaunLGSzhgEtLz4xVZ_SpV4G0xJazS7LxQkDsaAuveEALw_wcB&gclsrc=aw.ds)
    2. Create an Android Virtual Device (AVD) by following these instructions. For hardware select **Pixel 6**, for System Image select **Tiramisu, API Level 33**, and choose AVD name as **AndroidWorldAvd**. [Watch the setup video.](https://github.com/google-research/android_world/assets/162379927/efc33980-8b36-44be-bb2b-a92d4c334a50)
 
-1. Launch the Android Emulator from the command line
+1. Launch the Android Emulator
 
-    Launch the emulator from the command line, not using the Android Studio UI,
-    with the `-grpc 8554` flag which is needed communication with accessibility
-    forwarding app.
+    Launch `AndroidWorldAvd` through Agentsims or Android Studio, or use the
+    following command. AndroidWorld connects to the running emulator through
+    ADB and gRPC.
 
     ```bash
     # Typically it's located in ~/Android/Sdk/emulator/emulator or
@@ -54,6 +54,18 @@ o
     EMULATOR_NAME=AndroidWorldAvd # From previous step
     ~/Library/Android/sdk/emulator/emulator -avd $EMULATOR_NAME -no-snapshot -grpc 8554
     ```
+
+    AndroidWorld reads the emulator's gRPC port and authentication token from its
+    local discovery file on macOS and Linux. This supports the connection that
+    Agentsims uses for its preview.
+
+    Check the running device with `adb devices`. Set `--console_port` in either
+    runner to the number after `emulator-`. This number can change after a restart.
+    For example, `emulator-5554` requires `--console_port=5554`.
+    The console port and gRPC port are separate. Both runners discover the gRPC
+    port automatically. Use `--grpc_port` only when automatic discovery is
+    unavailable. Manual launches without discovery metadata default to gRPC port
+    8554. Each running emulator needs a separate gRPC port.
 
 1. [Optional] It's recommended to use `conda`, which you can download [here](https://docs.anaconda.com/free/miniconda/miniconda-install/).
 
@@ -103,6 +115,83 @@ to try open-source apps, i.e. not included with Android OS, please run
 `--perform_emulator_setup` in the script below.*
 
 **Note on Model Cost:** The `minimal_task_runner.py` script uses a legacy model `gpt-4-turbo-2024-04-09` by default. This model can be expensive. For serious usage, you can switch to a more cost-effective model, by modifying the `model_name` in the script.
+
+### Run the benchmark with the Pi coding agent
+
+`run_pi_benchmark.sh` scores the [Pi](https://github.com/badlogic/pi-mono) coding
+agent on AndroidWorld. Pi drives the emulator through the
+[agentsims](https://github.com/Maniktherana/agentsims) CLI and its
+`build-mobile-apps` skill, the same way a person uses the phone. One task is one
+Pi session. AndroidWorld grades device state after Pi stops.
+
+Requirements:
+
+- `agentsims` on `PATH`, with a workspace that lists the emulator.
+- `pi` on `PATH`, with a provider in `~/.pi/agent/models.json`.
+
+```bash
+./run_pi_benchmark.sh --tasks=ContactsAddContact   # one task
+./run_pi_benchmark.sh                              # the whole suite
+```
+
+The script checks the emulator and the agentsims workspace, then starts the run.
+Each task starts an Agentsims trace before Pi runs. The trace stops before
+AndroidWorld receives Pi's result, including when Pi fails or times out. Traces
+are in `~/.agentsims/traces/`. Their names use
+`<task>-<device>-<UTC timestamp>`. Pi's output streams to the terminal. Each
+session is also written to `<output_path>/pi_logs/`.
+
+Override the defaults with environment variables: `PI_PROVIDER`, `PI_MODEL`,
+`PI_TIMEOUT_SEC`, `CONSOLE_PORT`, `DEVICE_ID`, `AGENTSIMS_BIN`, `SKILL_PATH`,
+`OUTPUT_PATH`, and `PYTHON`. The equivalent `run.py` flags are
+`--agent_name=pi` with `--pi_agent_provider`, `--pi_agent_model`,
+`--pi_device_id`, `--pi_skill_path`, `--pi_thinking`, `--pi_timeout_sec`, and
+`--agentsims_binary`.
+
+The task prompt tells Pi to reach the end state through the UI and not through
+`adb` or direct database writes. That is an instruction, not a sandbox. Read the
+transcripts in `pi_logs/` to audit a run.
+
+### Run the benchmark with Codex CLI
+
+`run_codex_benchmark.sh` runs a new Codex CLI process for every AndroidWorld
+task. Codex uses `gpt-5.6-luna` through Azure OpenAI and drives the emulator
+through the agentsims CLI.
+
+Requirements:
+
+- `codex`, `agentsims`, and `tmux` on `PATH`.
+- `AZURE_OPENAI_API_KEY` set in the environment.
+- The Azure deployment available as `gpt-5.6-luna`.
+
+```bash
+export AZURE_OPENAI_API_KEY='...'
+./run_codex_benchmark.sh --tasks=ContactsAddContact
+./run_codex_benchmark.sh
+```
+
+Watch the live Codex output from another terminal:
+
+```bash
+tmux attach -r -t androidworld-codex
+```
+
+The tmux window stays available for the full run. The `-r` option makes the
+attached client read-only, so terminal input cannot affect the benchmark. Each
+task starts with an empty Codex context. The runner ignores the normal Codex
+user configuration and uses only the Azure provider that it supplies for the
+task. The key remains in the environment and is not written into the command or
+log.
+
+Each task starts an Agentsims trace immediately before its prompt is submitted.
+The trace stops after Codex exits and before AndroidWorld grades the task. Trace
+names use `<task>-<device>-<UTC timestamp>`. Task files are written to
+`<output_path>/codex_logs/`.
+
+Override the defaults with `CODEX_MODEL`, `CODEX_REASONING`,
+`AZURE_OPENAI_ENDPOINT`, `CODEX_AZURE_API_VERSION`, `CODEX_TIMEOUT_SEC`,
+`CODEX_TMUX_SESSION`, `CONSOLE_PORT`, `DEVICE_ID`, `AGENTSIMS_BIN`,
+`CODEX_BIN`, `SKILL_PATH`, `OUTPUT_PATH`, and `PYTHON`.
 
 ## Docker Support (Experimental)
 
