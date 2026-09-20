@@ -29,7 +29,7 @@ _ANDROID_WORLD_API_LEVEL = 33
 
 
 def _get_env(
-    console_port: int, adb_path: str, grpc_port: int
+    console_port: int, adb_path: str, grpc_port: int | None
 ) -> interface.AsyncEnv:
   """Creates an AsyncEnv by connecting to an existing Android environment."""
   controller = android_world_controller.get_controller(
@@ -98,7 +98,7 @@ def load_and_setup_env(
     emulator_setup: bool = False,
     freeze_datetime: bool = True,
     adb_path: str = android_world_controller.DEFAULT_ADB_PATH,
-    grpc_port: int = 8554,
+    grpc_port: int | None = None,
 ) -> interface.AsyncEnv:
   """Create environment with `get_env()` and perform env setup and validation.
 
@@ -117,7 +117,9 @@ def load_and_setup_env(
     freeze_datetime: Whether to freeze the datetime to a fixed time, October
       2023, to ensure consistent benchmarking.
     adb_path: The location of the adb binary.
-    grpc_port: The port for gRPC communication with the emulator.
+    grpc_port: The gRPC port. If omitted, discover it and its authentication
+      token from the selected emulator's local metadata. If metadata is not
+      available, use port 8554 without a token for legacy manual launches.
 
   Returns:
     An interactable Android environment.

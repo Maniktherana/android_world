@@ -19,6 +19,7 @@ from android_env import env_interface
 from android_env import loader
 from android_env.components import config_classes
 from android_world.env import android_world_controller
+from android_world.env import emulator_connection
 from android_world.env import env_launcher
 from android_world.env import interface
 
@@ -39,7 +40,11 @@ class EnvLauncherTest(absltest.TestCase):
     mock_android_env = mock.create_autospec(env_interface.AndroidEnvInterface)
     mock_loader.return_value = mock_android_env
 
-    env_launcher._get_env(5556, "some_adb_path", 8554)
+    with mock.patch.object(
+        emulator_connection, "discover",
+        return_value=emulator_connection.Connection(8554),
+    ):
+      env_launcher._get_env(5556, "some_adb_path", 8554)
 
     expected_launcher_config = config_classes.EmulatorLauncherConfig(
         emulator_console_port=5556,

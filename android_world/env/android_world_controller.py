@@ -29,6 +29,7 @@ from android_env.proto.a11y import android_accessibility_forest_pb2
 from android_env.wrappers import a11y_grpc_wrapper
 from android_env.wrappers import base_wrapper
 from android_world.env import adb_utils
+from android_world.env import emulator_connection
 from android_world.env import representation_utils
 from android_world.utils import file_utils
 import dm_env
@@ -307,14 +308,15 @@ max_episode_sec: 7200  # Prevent infinite episodes.
 def get_controller(
     console_port: int = 5554,
     adb_path: str = DEFAULT_ADB_PATH,
-    grpc_port: int = 8554,
+    grpc_port: int | None = None,
 ) -> AndroidWorldController:
   """Creates a controller by connecting to an existing Android environment."""
 
+  connection = emulator_connection.discover(console_port, grpc_port)
   emulator_launcher = config_classes.EmulatorLauncherConfig(
       emulator_console_port=console_port,
       adb_port=console_port + 1,
-      grpc_port=grpc_port,
+      grpc_port=connection.port,
   )
   if hasattr(emulator_launcher, 'connect_to_existing'):
     setattr(emulator_launcher, 'connect_to_existing', True)
@@ -328,6 +330,11 @@ def get_controller(
           adb_controller=config_classes.AdbControllerConfig(adb_path=adb_path),
       ),
   )
-  android_env_instance = loader.load(config)
+  if connection.token:
+    android_env_instance = emulator_connection.load_authenticated_env(
+        config, connection.token
+    )
+  else:
+    android_env_instance = loader.load(config=config)
   logging.info('Setting up AndroidWorldController.')
   return AndroidWorldController(android_env_instance)

@@ -82,6 +82,14 @@ _TASK = flags.DEFINE_string(
     'A specific task to run.',
 )
 
+_GRPC_PORT = flags.DEFINE_integer(
+    'grpc_port',
+    None,
+    'Emulator gRPC port. By default, discover it from --console_port.',
+    lower_bound=1,
+    upper_bound=65535,
+)
+
 
 def _main() -> None:
   """Runs a single task."""
@@ -89,6 +97,7 @@ def _main() -> None:
       console_port=_DEVICE_CONSOLE_PORT.value,
       emulator_setup=_EMULATOR_SETUP.value,
       adb_path=_ADB_PATH.value,
+      grpc_port=_GRPC_PORT.value,
   )
   env.reset(go_home=True)
   task_registry = registry.TaskRegistry()
